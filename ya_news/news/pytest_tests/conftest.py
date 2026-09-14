@@ -10,12 +10,12 @@ from news.models import Comment, News
 
 @pytest.fixture
 def author(db, django_user_model):
-    return django_user_model.objects.create_user(username='author')
+    return django_user_model.objects.create(username='author')
 
 
 @pytest.fixture
 def other_user(db, django_user_model):
-    return django_user_model.objects.create_user(username='other_user')
+    return django_user_model.objects.create(username='other_user')
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def comment(db, news, author):
 
 
 @pytest.fixture
-def news_list(db):
+def news_list(db, settings):
     today = timezone.localdate()
     return News.objects.bulk_create([
         News(
@@ -53,7 +53,7 @@ def news_list(db):
             text=f'Текст новости {index}',
             date=today - timedelta(days=index),
         )
-        for index in range(11)
+        for index in range(settings.NEWS_COUNT_ON_HOME_PAGE + 1)
     ])
 
 

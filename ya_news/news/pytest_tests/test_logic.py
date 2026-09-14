@@ -2,8 +2,10 @@ from http import HTTPStatus
 from urllib.parse import urlencode
 
 import pytest
+from django.contrib.auth import SESSION_KEY
 from pytest_django.asserts import assertFormError, assertRedirects
 
+from news.forms import BAD_WORDS
 from news.models import Comment
 
 
@@ -37,7 +39,11 @@ def test_authenticated_user_creates_comment(
     assertRedirects(response, comments_url, status_code=HTTPStatus.FOUND)
 
 
-@pytest.mark.parametrize('text', ('Ты редиска!', 'Ты РЕДИСКА!'))
+@pytest.mark.parametrize(
+    'text',
+    [f'Ты {variant}!' for word in BAD_WORDS
+     for variant in (word, word.upper())],
+)
 def test_comment_with_bad_word_is_not_saved(
     author_client, detail_url, text, comment,
 ):
@@ -56,16 +62,14 @@ def test_author_can_edit_comment(
     author_client, comment, edit_url, comments_url, form_data,
 ):
     initial_count = Comment.objects.count()
-    original_author_id = comment.author_id
-    original_news_id = comment.news_id
 
     response = author_client.post(edit_url, data=form_data)
 
-    comment.refresh_from_db()
+    updated_comment = Comment.objects.get(pk=comment.pk)
     assert Comment.objects.count() == initial_count
-    assert comment.text == form_data['text']
-    assert comment.author_id == original_author_id
-    assert comment.news_id == original_news_id
+    assert updated_comment.text == form_data['text']
+    assert updated_comment.author_id == comment.author_id
+    assert updated_comment.news_id == comment.news_id
     assertRedirects(response, comments_url, status_code=HTTPStatus.FOUND)
 
 
@@ -81,14 +85,38 @@ def test_author_can_delete_comment(
     assertRedirects(response, comments_url, status_code=HTTPStatus.FOUND)
 
 
-@pytest.mark.parametrize('url_fixture', ('edit_url', 'delete_url'))
-def test_other_user_cannot_change_comment(
-    other_user_client, comment, request, url_fixture, form_data,
+def test_other_user_cannot_edit_comment(
+    other_user_client, comment, edit_url, form_data,
 ):
-    url = request.getfixturevalue(url_fixture)
-    original_comments = list(Comment.objects.order_by('pk').values())
+    initial_count = Comment.objects.count()
 
-    response = other_user_client.post(url, data=form_data)
+    response = other_user_client.post(edit_url, data=form_data)
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+    unchanged_comment = Comment.objects.get(pk=comment.pk)
+    assert Comment.objects.count() == initial_count
+    assert unchanged_comment.text == comment.text
+    assert unchanged_comment.author_id == comment.author_id
+    assert unchanged_comment.news_id == comment.news_id
+    assert unchanged_comment.created == comment.created
+
+
+def test_other_user_cannot_delete_comment(
+    other_user_client, comment, delete_url,
+):
+    original_comments = list(Comment.objects.order_by('pk').values())
+
+    response = other_user_client.post(delete_url)
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert Comment.objects.filter(pk=comment.pk).exists()
     assert list(Comment.objects.order_by('pk').values()) == original_comments
+
+
+def test_authenticated_user_can_log_out(author_client, author, logout_url):
+    assert author_client.session[SESSION_KEY] == str(author.pk)
+
+    response = author_client.post(logout_url)
+
+    assert response.status_code == HTTPStatus.OK
+    assert SESSION_KEY not in author_client.session

@@ -1,18 +1,19 @@
 from news.forms import CommentForm
 
 
-def test_home_page_news_limit(client, home_url, news_list):
-    assert len(news_list) == 11
-
+def test_home_page_news_limit(client, home_url, news_list, settings):
     response = client.get(home_url)
 
-    assert len(response.context['object_list']) == 10
+    assert (
+        response.context['object_list'].count()
+        == settings.NEWS_COUNT_ON_HOME_PAGE
+    )
 
 
-def test_home_page_news_order(client, home_url, news_list):
+def test_home_page_news_order(client, home_url, news_list, settings):
     expected_dates = sorted(
         (item.date for item in news_list), reverse=True,
-    )[:10]
+    )[:settings.NEWS_COUNT_ON_HOME_PAGE]
 
     response = client.get(home_url)
 
@@ -39,4 +40,4 @@ def test_anonymous_user_has_no_comment_form(client, detail_url):
 def test_authenticated_user_has_comment_form(author_client, detail_url):
     response = author_client.get(detail_url)
 
-    assert isinstance(response.context['form'], CommentForm)
+    assert isinstance(response.context.get('form'), CommentForm)
